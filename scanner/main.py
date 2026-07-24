@@ -6,6 +6,9 @@ from providers.orc import OrcProvider
 from providers.doc import DOCProvider
 from rules.executor import get_rules_for_provider, evaluate_rules
 
+from risk_scorer.log_risk_scorer import parse_log
+from json import dumps
+
 SUPPORTED_PROVIDERS = {
     "aws": AWSProvider,
     "gcp": GCPProvider,
@@ -79,47 +82,67 @@ def main():
 
     print(f"\nScanning started. Redirecting all output to {filename}...")
 
-    with open(filename, "w", encoding="utf-8") as f:
-        # Redirect stdout to the dynamic log file
-        original_stdout = sys.stdout
-        sys.stdout = f
+    # ------------------------------------------------------
 
-        try:
-            print("--- Step 1: Discovering Resources ---")
-            resources = provider.discover_resources()
-            print(f"\n[Scanner] Discovered {len(resources)} resources:")
-            for resource in resources:
-                print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
+    f = open(filename, "w", encoding="utf-8")
+    # Redirect stdout to the dynamic log file
+    original_stdout = sys.stdout
+    sys.stdout = f
 
-            print("\n--- Step 2 & 3: Scanning Resources ---")
-            for idx, resource in enumerate(resources, 1):
-                # Print progress to both the log file and the interactive console
-                progress_msg = f"[{idx}/{len(resources)}] Scanning resource: [{resource['type']}] {resource['name']} ({resource['id']})..."
-                print(f"\n{progress_msg}")
-                print(progress_msg, file=sys.__stdout__, flush=True)
+    try:
+        print("--- Step 1: Discovering Resources ---")
+        resources = provider.discover_resources()
+        print(f"\n[Scanner] Discovered {len(resources)} resources:")
+        for resource in resources:
+            print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
 
-                # Step 2: Collect configuration
-                configuration = provider.get_configuration(resource)
-                print("Configuration collected:")
-                pprint.pprint(configuration, indent=2)
+        print("\n--- Step 2 & 3: Scanning Resources ---")
+        for idx, resource in enumerate(resources, 1):
+            # Print progress to both the log file and the interactive console
+            progress_msg = f"[{idx}/{len(resources)}] Scanning resource: [{resource['type']}] {resource['name']} ({resource['id']})..."
+            print(f"\n{progress_msg}")
+            print(progress_msg, file=sys.__stdout__, flush=True)
 
-                # Step 3: Evaluate security rules
-                resource_evaluations = evaluate_rules(resource, configuration, rules)
-                print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
-                for rule_idx, eval_res in enumerate(resource_evaluations, 1):
-                    status_str = f"[{eval_res['status']}]"
-                    print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
-                    print(f"    Description:    {eval_res['description']}")
-                    if eval_res['status'] != "SAFE":
-                        print(f"    Recommendation: {eval_res['recommendation']}")
+            # Step 2: Collect configuration
+            configuration = provider.get_configuration(resource)
+            print("Configuration collected:")
+            pprint.pprint(configuration, indent=2)
 
-            provider.disconnect()
+            # Step 3: Evaluate security rules
+            resource_evaluations = evaluate_rules(resource, configuration, rules)
+            print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
+            for rule_idx, eval_res in enumerate(resource_evaluations, 1):
+                status_str = f"[{eval_res['status']}]"
+                print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
+                print(f"    Description:    {eval_res['description']}")
+                if eval_res['status'] != "SAFE":
+                    print(f"    Recommendation: {eval_res['recommendation']}")
 
-        finally:
-            # Restore original stdout
+        provider.disconnect()
+
+    finally:
+        # Restore original stdout
+        sys.stdout = original_stdout
+
+    f.close()
+    print(f"Scan completed successfully. Results saved in {filename}.")
+
+    try:
+        riskscore_fname = f"SCORE-{prov_name}-{account_id}-{timestamp}.log"
+        with open(riskscore_fname, "w", encoding="utf-8") as rsf:
+            original_stdout = sys.stdout
+            sys.stdout = rsf
+
+            with open(filename, "r", encoding="utf-8") as f:
+                result = parse_log(f.read())
+                print(dumps(result, indent=2))
+
+    finally:
             sys.stdout = original_stdout
 
-    print(f"Scan completed successfully. Results saved in {filename}.")
+    print(f"The risk score for the results is saved in {riskscore_fname}.\
+            Scores can also be manually generated using the log-risk-scorer module.")
+
 
 
 if __name__ == "__main__":

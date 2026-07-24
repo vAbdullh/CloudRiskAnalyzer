@@ -2,7 +2,7 @@ import requests
 from providers.base import BaseProvider
 
 class DOCProvider(BaseProvider):
-    name = "DigitalOcean"
+    name = "DOC"
 
     def __init__(self):
         self._session = None
