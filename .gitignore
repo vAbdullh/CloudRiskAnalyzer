@@ -16,3 +16,5 @@ env/
 .env
 *.log
 .supabase/
+cloud_risk_scoring_matrix.csv
+RESULT-AWS-945504685218-20260723-225137.log.txt

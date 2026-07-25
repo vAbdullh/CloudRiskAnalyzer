@@ -213,6 +213,9 @@ RULES = [
         "severity": "Critical",
         "description": "Root account has active access keys. Root keys are dangerous and cannot be restricted by IAM policies.",
         "recommendation": "Delete the root account access keys immediately and use IAM users/roles instead.",
+        "r_base": 10.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: config.get("is_root", False) and (config.get("credential_report_row", {}).get("access_key_1_active") == "true" or config.get("credential_report_row", {}).get("access_key_2_active") == "true"),
     },
     {
@@ -221,6 +224,9 @@ RULES = [
         "severity": "Critical",
         "description": "Root account does not have Multi-Factor Authentication (MFA) enabled.",
         "recommendation": "Enable MFA on the root account immediately.",
+        "r_base": 10.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: config.get("is_root", False) and config.get("credential_report_row", {}).get("mfa_active") == "false",
     },
     {
@@ -229,6 +235,9 @@ RULES = [
         "severity": "Critical",
         "description": "IAM User has AdministratorAccess policy directly attached.",
         "recommendation": "Remove direct AdministratorAccess policy attachment and assign privileges via IAM Groups or Roles.",
+        "r_base": 7.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.1,
         "check": lambda config: not config.get("is_root", False) and not config.get("is_role", False) and any(p.get("PolicyName") == "AdministratorAccess" for p in config.get("attached_policies", [])),
     },
     {
@@ -237,6 +246,9 @@ RULES = [
         "severity": "Critical",
         "description": "IAM Role has AdministratorAccess policy attached.",
         "recommendation": "Review this role's permissions and enforce least privilege restrictions.",
+        "r_base": 7.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.1,
         "check": lambda config: config.get("is_role", False) and any(p.get("PolicyName") == "AdministratorAccess" for p in config.get("attached_policies", [])),
     },
     {
@@ -245,6 +257,9 @@ RULES = [
         "severity": "Critical",
         "description": "IAM policy allows Action:* and Resource:* (full admin rights).",
         "recommendation": "Specify explicit allowed actions and target resource ARNs.",
+        "r_base": 7.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.1,
         "check": check_admin_wildcard,
     },
     {
@@ -253,6 +268,9 @@ RULES = [
         "severity": "Critical",
         "description": "IAM policy grants permissions that allow privilege escalation (e.g. PassRole, AttachRolePolicy).",
         "recommendation": "Restrict iam:PassRole and policy attachment actions to authorized admins only.",
+        "r_base": 6.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.1,
         "check": check_privilege_escalation,
     },
     {
@@ -261,6 +279,9 @@ RULES = [
         "severity": "High",
         "description": "IAM User has console login password active but Multi-Factor Authentication (MFA) is disabled.",
         "recommendation": "Enable MFA immediately for this user.",
+        "r_base": 5.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: not config.get("is_root", False) and not config.get("is_role", False) and config.get("credential_report_row", {}).get("password_active") == "true" and config.get("credential_report_row", {}).get("mfa_active") == "false",
     },
     {
@@ -269,6 +290,9 @@ RULES = [
         "severity": "Warning",
         "description": "Active access key was created or rotated more than 90 days ago.",
         "recommendation": "Rotate your active access keys regularly (every 90 days).",
+        "r_base": 3.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": check_key_older_than_90_days,
     },
     {
@@ -277,6 +301,9 @@ RULES = [
         "severity": "Warning",
         "description": "Active access key has not been used to make API calls in the last 90 days.",
         "recommendation": "Deactivate or delete unused access keys to reduce the attack surface.",
+        "r_base": 3.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": check_key_unused_90_days,
     },
     {
@@ -285,6 +312,9 @@ RULES = [
         "severity": "Warning",
         "description": "IAM user has not used their password or access keys in the last 90 days.",
         "recommendation": "Deactivate and clean up inactive IAM users.",
+        "r_base": 3.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": check_user_inactive_90_days,
     },
     {
@@ -293,6 +323,9 @@ RULES = [
         "severity": "Warning",
         "description": "IAM user password has never been rotated.",
         "recommendation": "Set a password rotation policy or rotate the password regularly.",
+        "r_base": 3.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": lambda config: not config.get("is_root", False) and not config.get("is_role", False) and config.get("credential_report_row", {}).get("password_active") == "true" and (config.get("credential_report_row", {}).get("password_last_changed") == "N/A" or config.get("credential_report_row", {}).get("password_last_changed") is None),
     },
     {
@@ -301,6 +334,9 @@ RULES = [
         "severity": "High",
         "description": "User has both active Access Keys and a Console Password.",
         "recommendation": "Do not grant console login access to programmatic service accounts/users.",
+        "r_base": 4.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: not config.get("is_root", False) and not config.get("is_role", False) and config.get("credential_report_row", {}).get("password_active") == "true" and (config.get("credential_report_row", {}).get("access_key_1_active") == "true" or config.get("credential_report_row", {}).get("access_key_2_active") == "true"),
     },
     {
@@ -309,6 +345,9 @@ RULES = [
         "severity": "High",
         "description": "IAM policy allows service-wide wildcards (e.g. ec2:* or s3:*).",
         "recommendation": "Refine policy actions to only the required API endpoints (e.g. s3:GetObject).",
+        "r_base": 5.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": check_wildcard_service_permissions,
     },
     {
@@ -317,6 +356,9 @@ RULES = [
         "severity": "Critical",
         "description": "IAM Role allows wildcard Principal (*) to assume it, making it publicly accessible.",
         "recommendation": "Restrict the Trust Relationship principal to specific trusted ARNs.",
+        "r_base": 8.0,
+        "exposure_factor": 1.5,
+        "chain_multiplier": 1.2,
         "check": check_wildcard_principal_trust,
     },
     {
@@ -325,6 +367,9 @@ RULES = [
         "severity": "High",
         "description": "IAM Role trust relationship allows access from an external AWS account ID.",
         "recommendation": "Verify that this external account trust is authorized and uses an External ID.",
+        "r_base": 5.0,
+        "exposure_factor": 1.5,
+        "chain_multiplier": 1.0,
         "check": check_external_account_trust,
     },
     {
@@ -333,6 +378,9 @@ RULES = [
         "severity": "Medium",
         "description": "IAM user has inline policies attached directly to their profile.",
         "recommendation": "Convert inline policies to IAM managed policies for better auditing and reuse.",
+        "r_base": 2.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": lambda config: len(config.get("inline_policies", [])) > 0,
     },
     {
@@ -341,6 +389,9 @@ RULES = [
         "severity": "Warning",
         "description": "IAM User has two active access keys.",
         "recommendation": "Limit users to one active key to reduce credential exposure.",
+        "r_base": 2.5,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": check_multiple_active_keys,
     }
 ]

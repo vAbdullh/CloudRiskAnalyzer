@@ -103,6 +103,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows SSH (22) from 0.0.0.0/0.",
         "recommendation": "Restrict inbound SSH access to trusted IP addresses.",
+        "r_base": 5.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 22, "0.0.0.0/0"),
     },
     {
@@ -111,6 +114,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows SSH (22) from ::/0.",
         "recommendation": "Restrict inbound SSH access to trusted IP addresses.",
+        "r_base": 5.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 22, "::/0"),
     },
     {
@@ -119,6 +125,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows RDP (3389) from 0.0.0.0/0.",
         "recommendation": "Restrict inbound RDP access to trusted IP addresses.",
+        "r_base": 5.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 3389, "0.0.0.0/0"),
     },
     {
@@ -127,6 +136,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows RDP (3389) from ::/0.",
         "recommendation": "Restrict inbound RDP access to trusted IP addresses.",
+        "r_base": 5.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 3389, "::/0"),
     },
     {
@@ -135,6 +147,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows database ports (3306, 5432, etc.) open to the internet.",
         "recommendation": "Restrict database access to internal subnets or trusted static IPs.",
+        "r_base": 5.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_db_ports(config.get("raw_data", {})),
     },
     {
@@ -143,6 +158,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows all TCP ports (0-65535) open to the internet.",
         "recommendation": "Explicitly define allowed ports instead of allowing all TCP ports.",
+        "r_base": 6.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_all_tcp(config.get("raw_data", {})),
     },
     {
@@ -151,6 +169,9 @@ RULES = [
         "severity": "Critical",
         "description": "Security Group allows all protocols (any port/traffic) open to the internet.",
         "recommendation": "Restrict traffic to specific required protocols and ports.",
+        "r_base": 6.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.2,
         "check": lambda config: check_all_protocols(config.get("raw_data", {})),
     },
     {
@@ -159,6 +180,9 @@ RULES = [
         "severity": "Info",
         "description": "Security Group allows inbound HTTP (80) traffic from the internet.",
         "recommendation": "None. Verify this server is intended to serve public web traffic.",
+        "r_base": 1.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 80, "0.0.0.0/0") or check_port_open_in_sg(config.get("raw_data", {}), 80, "::/0"),
     },
     {
@@ -167,6 +191,9 @@ RULES = [
         "severity": "Info",
         "description": "Security Group allows inbound HTTPS (443) traffic from the internet.",
         "recommendation": "None. Verify this server is intended to serve public web traffic.",
+        "r_base": 1.0,
+        "exposure_factor": 1.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: check_port_open_in_sg(config.get("raw_data", {}), 443, "0.0.0.0/0") or check_port_open_in_sg(config.get("raw_data", {}), 443, "::/0"),
     },
     {
@@ -175,6 +202,9 @@ RULES = [
         "severity": "High",
         "description": "Security Group allows sensitive management ports (e.g. FTP, Telnet, SMB) open to the internet.",
         "recommendation": "Block sensitive ports from the public internet.",
+        "r_base": 4.0,
+        "exposure_factor": 3.0,
+        "chain_multiplier": 1.1,
         "check": lambda config: check_sensitive_ports(config.get("raw_data", {})),
     },
     {
@@ -183,6 +213,9 @@ RULES = [
         "severity": "Medium",
         "description": "Security Group has more than 20 inbound rules configured.",
         "recommendation": "Consolidate your security group rules to keep policies clean and auditable.",
+        "r_base": 2.0,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": lambda config: check_inbound_count(config.get("raw_data", {})),
     },
     {
@@ -191,6 +224,9 @@ RULES = [
         "severity": "Warning",
         "description": "Security Group allows unrestricted outbound traffic to the internet.",
         "recommendation": "Restricting outbound traffic to only required ports and destinations is a good defense-in-depth practice.",
+        "r_base": 1.5,
+        "exposure_factor": 0.5,
+        "chain_multiplier": 1.0,
         "check": lambda config: check_outbound_all(config.get("raw_data", {})),
     },
     {
@@ -199,6 +235,9 @@ RULES = [
         "severity": "Info",
         "description": "Security Group is not associated with any active network interfaces.",
         "recommendation": "Consider deleting unused security groups to simplify management.",
+        "r_base": 1.0,
+        "exposure_factor": 0.0,
+        "chain_multiplier": 1.0,
         "check": lambda config: config.get("attached_resources_count", 0) == 0,
     }
 ]
