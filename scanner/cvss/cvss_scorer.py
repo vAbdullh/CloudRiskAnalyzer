@@ -148,6 +148,51 @@ def parse_log(log_text: str) -> Dict[str, object]:
     }
 
 
+def build_custom_scoring_section(evaluations: List[Dict[str, object]]) -> str:
+    """Format the custom scoring engine results into a readable report section."""
+    if not evaluations:
+        return "No custom scoring results were produced."
+
+    lines = []
+    for evaluation in evaluations:
+        if evaluation.get("risk_score") is None:
+            continue
+
+        rule_id = evaluation.get("rule_id", "UNKNOWN")
+        score = evaluation.get("risk_score")
+        priority = evaluation.get("action_priority", "")
+        sla = evaluation.get("sla", "")
+        metrics = evaluation.get("scoring_metrics") or {}
+
+        lines.append(
+            f"- Rule {rule_id}: Score={score:.1f} | Priority={priority} | SLA={sla}"
+        )
+        if metrics:
+            lines.append(
+                f"  Metrics: R_base={metrics.get('r_base', 0)} | E={metrics.get('exposure_factor', 0)} | C={metrics.get('chain_multiplier', 1.0)}x"
+            )
+
+    return "\n".join(lines) if lines else "No custom scoring results were produced."
+
+
+def build_consolidated_report(results_text: str, evaluations: List[Dict[str, object]]) -> str:
+    """Build a single log report containing results, CVSS, and custom scoring sections."""
+    cvss_result = parse_log(results_text)
+
+    sections = [
+        "=== RESULTS ===",
+        results_text.strip() or "No scan results captured.",
+        "",
+        "=== CVSS SCORE ===",
+        json.dumps(cvss_result, indent=2),
+        "",
+        "=== CUSTOM SCORING ENGINE SCORES ===",
+        build_custom_scoring_section(evaluations),
+        "",
+    ]
+    return "\n".join(sections)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a CVSS-style risk score from a log sample.")
     parser.add_argument("log_file", nargs="?", default="log_file.log", help="Path to the log file to scan.")

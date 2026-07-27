@@ -1,3 +1,4 @@
+import io
 import sys
 import pprint
 from providers.aws import AWSProvider
@@ -6,8 +7,7 @@ from providers.orc import OrcProvider
 from providers.doc import DOCProvider
 from rules.executor import get_rules_for_provider, evaluate_rules
 
-from risk_scorer.log_risk_scorer import parse_log
-from json import dumps
+from cvss.cvss_scorer import build_consolidated_report
 
 SUPPORTED_PROVIDERS = {
     "aws": AWSProvider,
@@ -123,7 +123,7 @@ def main():
 
     import datetime
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    
+
     # Extract clean provider name
     prov_name = "PROVIDER"
     if hasattr(provider, "name") and provider.name:
@@ -140,51 +140,63 @@ def main():
     account_id = getattr(provider, "account_id", None)
     if not account_id:
         account_id = "UNKNOWN"
-        
+
     filename = f"RESULT-{prov_name}-{account_id}-{timestamp}.log"
 
     print(f"\nScanning started. Redirecting all output to {filename}...")
 
     # Collect all evaluations across all resources for the summary
     all_evaluations = []
+    results_buffer = io.StringIO()
 
-    # ------------------------------------------------------
+    class TeeStream(io.TextIOBase):
+        def __init__(self, *streams):
+            self.streams = streams
 
-    f = open(filename, "w", encoding="utf-8")
-    # Redirect stdout to the dynamic log file
+        def write(self, data):
+            for stream in self.streams:
+                if stream is not None:
+                    stream.write(data)
+            return len(data)
+
+        def flush(self):
+            for stream in self.streams:
+                if hasattr(stream, "flush"):
+                    stream.flush()
+
+        def isatty(self):
+            return False
+
     original_stdout = sys.stdout
-    sys.stdout = f
-
     try:
-        print("--- Step 1: Discovering Resources ---")
-        resources = provider.discover_resources()
-        print(f"\n[Scanner] Discovered {len(resources)} resources:")
-        for resource in resources:
-            print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
+        with open(filename, "w", encoding="utf-8") as f:
+            sys.stdout = TeeStream(original_stdout, f, results_buffer)
 
-        print("\n--- Step 2 & 3: Scanning Resources ---")
-        for idx, resource in enumerate(resources, 1):
-            # Print progress to both the log file and the interactive console
-            progress_msg = f"[{idx}/{len(resources)}] Scanning resource: [{resource['type']}] {resource['name']} ({resource['id']})..."
-            print(f"\n{progress_msg}")
-            print(progress_msg, file=sys.__stdout__, flush=True)
+            print("--- Step 1: Discovering Resources ---")
+            resources = provider.discover_resources()
+            print(f"\n[Scanner] Discovered {len(resources)} resources:")
+            for resource in resources:
+                print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
 
-            # Step 2: Collect configuration
-            configuration = provider.get_configuration(resource)
-            print("Configuration collected:")
-            pprint.pprint(configuration, indent=2)
+            print("\n--- Step 2 & 3: Scanning Resources ---")
+            for idx, resource in enumerate(resources, 1):
+                progress_msg = f"[{idx}/{len(resources)}] Scanning resource: [{resource['type']}] {resource['name']} ({resource['id']})..."
+                print(f"\n{progress_msg}")
+                print(progress_msg, file=sys.__stdout__, flush=True)
 
-                # Step 3: Evaluate security rules
+                configuration = provider.get_configuration(resource)
+                print("Configuration collected:")
+                pprint.pprint(configuration, indent=2)
+
                 resource_evaluations = evaluate_rules(resource, configuration, rules)
                 all_evaluations.extend(resource_evaluations)
 
                 print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
-                for rule_idx, eval_res in enumerate(resource_evaluations, 1):
+                for eval_res in resource_evaluations:
                     status_str = f"[{eval_res['status']}]"
                     print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
                     print(f"    Description:    {eval_res['description']}")
 
-                    # --- Risk Score output for non-SAFE findings ---
                     if eval_res['status'] != "SAFE" and eval_res.get("risk_score") is not None:
                         score = eval_res["risk_score"]
                         priority = eval_res.get("action_priority", "")
@@ -200,44 +212,20 @@ def main():
 
                     if eval_res['status'] != "SAFE":
                         print(f"    Recommendation: {eval_res['recommendation']}")
-            # Step 3: Evaluate security rules
-            resource_evaluations = evaluate_rules(resource, configuration, rules)
-            print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
-            for rule_idx, eval_res in enumerate(resource_evaluations, 1):
-                status_str = f"[{eval_res['status']}]"
-                print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
-                print(f"    Description:    {eval_res['description']}")
-                if eval_res['status'] != "SAFE":
-                    print(f"    Recommendation: {eval_res['recommendation']}")
 
-            # --- Risk Score Summary ---
-            _print_risk_summary(all_evaluations)
+                _print_risk_summary(all_evaluations)
 
+                provider.disconnect()
             provider.disconnect()
-        provider.disconnect()
-
     finally:
-        # Restore original stdout
         sys.stdout = original_stdout
 
-    f.close()
+    consolidated_report = build_consolidated_report(results_buffer.getvalue(), all_evaluations)
+    with open(filename, "w", encoding="utf-8") as report_file:
+        report_file.write(consolidated_report)
+
     print(f"Scan completed successfully. Results saved in {filename}.")
-
-    try:
-        riskscore_fname = f"SCORE-{prov_name}-{account_id}-{timestamp}.log"
-        with open(riskscore_fname, "w", encoding="utf-8") as rsf:
-            original_stdout = sys.stdout
-            sys.stdout = rsf
-
-            with open(filename, "r", encoding="utf-8") as f:
-                result = parse_log(f.read())
-                print(dumps(result, indent=2))
-
-    finally:
-            sys.stdout = original_stdout
-
-    print(f"The risk score for the results is saved in {riskscore_fname}.\
-            Scores can also be manually generated using the log-risk-scorer module.")
+    print("The consolidated log report now includes the scan results, CVSS score, and custom scoring engine output.")
 
 
 

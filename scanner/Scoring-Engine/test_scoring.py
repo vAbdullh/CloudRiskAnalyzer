@@ -24,6 +24,7 @@ from Eng import (
     apply_dynamic_overrides,
     score_finding,
 )
+from cvss.cvss_scorer import build_consolidated_report
 
 
 class TestCoreFormula(unittest.TestCase):
@@ -205,6 +206,30 @@ class TestDynamicOverrides(unittest.TestCase):
         e, c = apply_dynamic_overrides(rule, config)
         self.assertEqual(e, 3.0)
         self.assertEqual(c, 1.2)
+
+
+class TestConsolidatedReport(unittest.TestCase):
+    """Validate that the merged log report contains all requested sections."""
+
+    def test_build_consolidated_report_includes_result_sections(self):
+        results = "Scan results\n[PASS] Public bucket exposed to internet"
+        evaluations = [
+            {
+                "rule_id": "OCI-STORAGE-001",
+                "risk_score": 9.9,
+                "action_priority": "Critical (P1)",
+                "sla": "Fix within 24 hours",
+            }
+        ]
+
+        report = build_consolidated_report(results, evaluations)
+
+        self.assertIn("=== RESULTS ===", report)
+        self.assertIn("Scan results", report)
+        self.assertIn("=== CVSS SCORE ===", report)
+        self.assertIn('"severity":', report)
+        self.assertIn("=== CUSTOM SCORING ENGINE SCORES ===", report)
+        self.assertIn("OCI-STORAGE-001", report)
 
 
 class TestScoreFinding(unittest.TestCase):
