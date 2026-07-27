@@ -43,6 +43,69 @@ def request_credentials(provider):
     return credentials
 
 
+def _print_risk_summary(all_evaluations: list):
+    """Print an aggregated Risk Score Summary at the end of the scan."""
+    # Collect all scored (non-SAFE) findings
+    scored = [e for e in all_evaluations if e.get("risk_score") is not None]
+
+    if not scored:
+        print("\n--- Risk Score Summary ---")
+        print("No active findings were scored.")
+        return
+
+    # Sort by risk score descending
+    scored.sort(key=lambda e: e["risk_score"], reverse=True)
+
+    # Count by priority bucket
+    priority_counts = {}
+    for e in scored:
+        p = e.get("action_priority", "Unknown")
+        priority_counts[p] = priority_counts.get(p, 0) + 1
+
+    # Determine overall posture
+    max_score = scored[0]["risk_score"]
+    if max_score >= 9.0:
+        posture = "CRITICAL — Immediate action required"
+    elif max_score >= 7.0:
+        posture = "HIGH RISK — Significant issues detected"
+    elif max_score >= 4.0:
+        posture = "MODERATE — Some findings need attention"
+    else:
+        posture = "LOW RISK — Minor findings only"
+
+    print("\n" + "=" * 70)
+    print("  RISK SCORE SUMMARY")
+    print("=" * 70)
+    print(f"\n  Overall Risk Posture:  {posture}")
+    print(f"  Total Scored Findings: {len(scored)}")
+    print()
+
+    # Priority breakdown
+    print("  Findings by Priority:")
+    priority_order = [
+        "Immediate (P0)", "Critical (P1)", "High (P2)", "Medium (P3)", "Low / Info (P4)"
+    ]
+    for p in priority_order:
+        count = priority_counts.get(p, 0)
+        if count > 0:
+            print(f"    {p:25s}  {count}")
+    print()
+
+    # Top 5 highest-risk findings
+    top_n = min(5, len(scored))
+    print(f"  Top {top_n} Highest-Risk Findings:")
+    print(f"  {'Score':>6s}  {'Priority':25s}  {'Rule ID':20s}  Resource")
+    print(f"  {'─' * 6}  {'─' * 25}  {'─' * 20}  {'─' * 30}")
+    for e in scored[:top_n]:
+        score_str = f"{e['risk_score']:.1f}"
+        print(
+            f"  {score_str:>6s}  {e.get('action_priority', ''):25s}  "
+            f"{e.get('rule_id', ''):20s}  {e.get('resource_name', '')}"
+        )
+
+    print("\n" + "=" * 70)
+
+
 def main():
     provider = choose_provider()
 
@@ -82,6 +145,9 @@ def main():
 
     print(f"\nScanning started. Redirecting all output to {filename}...")
 
+    # Collect all evaluations across all resources for the summary
+    all_evaluations = []
+
     # ------------------------------------------------------
 
     f = open(filename, "w", encoding="utf-8")
@@ -108,6 +174,32 @@ def main():
             print("Configuration collected:")
             pprint.pprint(configuration, indent=2)
 
+                # Step 3: Evaluate security rules
+                resource_evaluations = evaluate_rules(resource, configuration, rules)
+                all_evaluations.extend(resource_evaluations)
+
+                print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
+                for rule_idx, eval_res in enumerate(resource_evaluations, 1):
+                    status_str = f"[{eval_res['status']}]"
+                    print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
+                    print(f"    Description:    {eval_res['description']}")
+
+                    # --- Risk Score output for non-SAFE findings ---
+                    if eval_res['status'] != "SAFE" and eval_res.get("risk_score") is not None:
+                        score = eval_res["risk_score"]
+                        priority = eval_res.get("action_priority", "")
+                        sla = eval_res.get("sla", "")
+                        metrics = eval_res.get("scoring_metrics", {})
+
+                        r_base = metrics.get("r_base", 0)
+                        exposure = metrics.get("exposure_factor", 0)
+                        chain = metrics.get("chain_multiplier", 1.0)
+
+                        print(f"    Risk Score:     {score:.1f} / 10.0  |  Priority: {priority}  |  SLA: {sla}")
+                        print(f"    Metrics:        R_base={r_base}  E={exposure}  C={chain}x")
+
+                    if eval_res['status'] != "SAFE":
+                        print(f"    Recommendation: {eval_res['recommendation']}")
             # Step 3: Evaluate security rules
             resource_evaluations = evaluate_rules(resource, configuration, rules)
             print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
@@ -118,6 +210,10 @@ def main():
                 if eval_res['status'] != "SAFE":
                     print(f"    Recommendation: {eval_res['recommendation']}")
 
+            # --- Risk Score Summary ---
+            _print_risk_summary(all_evaluations)
+
+            provider.disconnect()
         provider.disconnect()
 
     finally:
