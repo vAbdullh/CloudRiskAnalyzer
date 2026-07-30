@@ -2,3 +2,4 @@ oci
 boto3
 google-cloud-compute
 google-cloud-storage
+python-dotenv

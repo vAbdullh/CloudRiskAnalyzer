@@ -7,7 +7,7 @@ class OrcProvider(BaseProvider):
     
     def __init__(self) -> None:
         """Initialize OCI provider instance variables."""
-        self._config = None
+        super().__init__()
         self._identity_client = None
         self._compute_client = None
         self._network_client = None
@@ -21,73 +21,50 @@ class OrcProvider(BaseProvider):
         return []
 
     def connect(self, credentials: dict) -> None:
-        """Connect to OCI using a local config file or manually entered credentials."""
+        """Connect to OCI using environment variables, .env, or fallback config files"""
+        from dotenv import load_dotenv
         import os
-        self._manually_entered = False
-        
-        use_config = input("Load OCI credentials from default config file (~/.oci/config)? (y/n): ").strip().lower()
-        if use_config == 'y':
+
+        load_dotenv()
+
+        # 1. Read OCI credentials from environment
+        self._config = {
+            "user": os.getenv("OCI_USER"),
+            "fingerprint": os.getenv("OCI_FINGERPRINT"),
+            "tenancy": os.getenv("OCI_TENANCY"),
+            "region": os.getenv("OCI_REGION"),
+            "key_file": os.getenv("OCI_KEY_FILE")
+        }
+        try:
+            validate_config(self._config)
+            print("[OCI] Connected using environment/.env credentials.")
+        except Exception as exc:
+            print(f"[OCI] Provided environment/.env credentials are invalid: {exc}")
+            self._config = None
+
+        # 2. Fallback to default OCI config file
+        if not self._config:
             try:
                 self._config = from_file()
                 validate_config(self._config)
+                print("[OCI] Connected using default OCI config file.")
             except Exception as exc:
-                print(f"[OCI] Failed to load config file: {exc}")
+                print(f"[OCI] Failed to load default config: {exc}")
                 self._config = None
-                return
-        else:
-            self._manually_entered = True
-            print("\nPlease enter your OCI Credentials details manually:")
-            user = input("user (OCID): ").strip()
-            fingerprint = input("fingerprint: ").strip()
-            tenancy = input("tenancy (OCID): ").strip()
-            region = input("region: ").strip()
-            key_file = input("key_file (path to private key file): ").strip()
-            
-            key_file = os.path.expanduser(key_file)
-            
-            self._config = {
-                "user": user,
-                "fingerprint": fingerprint,
-                "tenancy": tenancy,
-                "region": region,
-                "key_file": key_file
-            }
-            
-            try:
-                validate_config(self._config)
-            except Exception as exc:
-                print(f"[OCI] Provided config attributes are invalid: {exc}")
-                self._config = None
-                return
 
-        self._tenancy_id = self._config["tenancy"]
+        if self._config is None:
+            print("[OCI] Connection failed: No valid OCI credentials or config files found.")
+            return
+
+        # 3. Initialize clients
+        self._tenancy_id = self._config.get("tenancy")
         self._compartment_id = self._tenancy_id
         self.account_id = self._tenancy_id
-
-        try:
-            self._identity_client = oci.identity.IdentityClient(self._config)
-        except Exception as exc:
-            print(f"[OCI] Could not initialize Identity client: {exc}")
-
-        try:
-            self._compute_client = oci.core.ComputeClient(self._config)
-        except Exception as exc:
-            print(f"[OCI] Could not initialize Compute client: {exc}")
-
-        try:
-            self._network_client = oci.core.VirtualNetworkClient(self._config)
-        except Exception as exc:
-            print(f"[OCI] Could not initialize Network client: {exc}")
-
-        try:
-            self._object_storage_client = oci.object_storage.ObjectStorageClient(self._config)
-        except Exception as exc:
-            print(f"[OCI] Could not initialize Object Storage client: {exc}")
-
-        try:
-            self._namespace = self._object_storage_client.get_namespace().data
-        except Exception as exc:
-            print(f"[OCI] Could not fetch Object Storage namespace: {exc}")
+        self._identity_client = oci.identity.IdentityClient(self._config)
+        self._compute_client = oci.core.ComputeClient(self._config)
+        self._network_client = oci.core.VirtualNetworkClient(self._config)
+        self._object_storage_client = oci.object_storage.ObjectStorageClient(self._config)
+        self._namespace = self._object_storage_client.get_namespace().data
 
         print(f"[OCI] Connected - tenancy: {self._tenancy_id}")
 
@@ -100,38 +77,6 @@ class OrcProvider(BaseProvider):
         try:
             user = self._identity_client.get_user(self._config["user"]).data
             print(f"[OCI] Authenticated as: {user.name} ({user.id})")
-            
-            if getattr(self, "_manually_entered", False):
-                save_choice = input("\nSuccessfully authenticated! Save these credentials to ~/.oci/config? (y/n): ").strip().lower()
-                if save_choice == 'y':
-                    try:
-                        import os
-                        oci_dir = os.path.expanduser(os.path.join("~", ".oci"))
-                        if not os.path.exists(oci_dir):
-                            os.makedirs(oci_dir, mode=0o700)
-                        
-                        config_path = os.path.join(oci_dir, "config")
-                        
-                        config_content = f"""[DEFAULT]
-user={self._config['user']}
-fingerprint={self._config['fingerprint']}
-key_file={self._config['key_file']}
-tenancy={self._config['tenancy']}
-region={self._config['region']}
-"""
-                        with open(config_path, "w") as f:
-                            f.write(config_content)
-                        
-                        try:
-                            os.chmod(config_path, 0o600)
-                        except Exception:
-                            pass
-                            
-                        print(f"[OCI] Credentials successfully saved to {config_path}")
-                    except Exception as e:
-                        print(f"[OCI] Failed to save config file: {e}")
-                else:
-                    print("[OCI] Running this session only without saving credentials.")
             return True
         except Exception as exc:
             print(f"[OCI] Connection validation failed: {exc}")

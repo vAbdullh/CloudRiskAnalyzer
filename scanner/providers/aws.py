@@ -7,11 +7,11 @@ class AWSProvider(BaseProvider):
     name = "AWS"
 
     def __init__(self):
+        super().__init__()
         self._session = None
         self.access_key = None
         self.secret_key = None
         self.region = None
-        self.account_id = None
         self._credential_report = None
 
     def required_credentials(self) -> list[dict]:
