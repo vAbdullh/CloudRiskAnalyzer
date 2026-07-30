@@ -1,5 +1,6 @@
 import oci
 from oci.config import from_file, validate_config
+from oci.retry import NoneRetryStrategy
 from providers.base import BaseProvider
 
 class OrcProvider(BaseProvider):
@@ -49,31 +50,34 @@ class OrcProvider(BaseProvider):
                 validate_config(self._config)
                 print("[OCI] Connected using default OCI config file.")
             except Exception as exc:
-                print(f"[OCI] Failed to load default config: {exc}")
+                print(f"[OCI] Connection failed: {exc}")
                 self._config = None
+                return
 
-        if self._config is None:
-            print("[OCI] Connection failed: No valid OCI credentials or config files found.")
-            return
-
-        # 3. Initialize clients
+        # 3. Initialize clients with a 5-second timeout and no retry strategy
         self._tenancy_id = self._config.get("tenancy")
         self._compartment_id = self._tenancy_id
         self.account_id = self._tenancy_id
-        self._identity_client = oci.identity.IdentityClient(self._config)
-        self._compute_client = oci.core.ComputeClient(self._config)
-        self._network_client = oci.core.VirtualNetworkClient(self._config)
-        self._object_storage_client = oci.object_storage.ObjectStorageClient(self._config)
-        self._namespace = self._object_storage_client.get_namespace().data
+        
+        client_kwargs = {
+            "timeout": (5, 5),
+            "retry_strategy": NoneRetryStrategy()
+        }
+        try:
+            self._identity_client = oci.identity.IdentityClient(self._config, **client_kwargs)
+            self._compute_client = oci.core.ComputeClient(self._config, **client_kwargs)
+            self._network_client = oci.core.VirtualNetworkClient(self._config, **client_kwargs)
+            self._object_storage_client = oci.object_storage.ObjectStorageClient(self._config, **client_kwargs)
+            self._namespace = self._object_storage_client.get_namespace().data
+        except Exception as exc:
+            print(f"[OCI] Connection failed (configuration or network error): {exc}")
+            self._config = None
+            return
 
         print(f"[OCI] Connected - tenancy: {self._tenancy_id}")
 
     def validate_credentials(self) -> bool:
         """Validate current OCI connection credentials by performing a test identity call."""
-        if self._config is None or self._identity_client is None:
-            print("[OCI] Not connected. Call connect() first.")
-            return False
-
         try:
             user = self._identity_client.get_user(self._config["user"]).data
             print(f"[OCI] Authenticated as: {user.name} ({user.id})")
@@ -129,6 +133,32 @@ class OrcProvider(BaseProvider):
         print(f"[OCI] Discovered {len(resources)} resources across all compartments.")
         return resources
 
+    def get_configuration(self, resource: dict) -> dict:
+        """Collect detailed configuration settings for a given resource."""
+        print(f"[OCI] Collecting configuration for {resource['type']}: {resource['name']}...")
+        rtype = resource.get("type", "")
+        cid = resource.get("compartment_id", self._compartment_id)
+
+        dispatch = {
+            "Compute": lambda: self._get_compute_config(resource, cid),
+            "VCN": lambda: self._get_vcn_config(resource),
+            "Subnet": lambda: self._get_subnet_config(resource),
+            "SecurityList": lambda: self._get_security_list_config(resource),
+            "ObjectStorage": lambda: self._get_bucket_config(resource),
+            "IAM_Users": lambda: self._get_iam_user_config(resource),
+            "IAM_Policies": lambda: self._get_iam_policy_config(resource)
+        }
+
+        handler = dispatch.get(rtype)
+        if handler:
+            return handler()
+
+        return {
+            "id": resource.get("id"),
+            "name": resource.get("name"),
+            "type": rtype
+        }
+        
     def _discover_compute(self, compartments: list[str]) -> list[dict]:
         """Discover active Compute instances in the specified compartments."""
         results = []
@@ -274,32 +304,6 @@ class OrcProvider(BaseProvider):
             except Exception as exc:
                 print(f"[OCI] Error listing IAM Policies in compartment {cid}: {exc}")
         return results
-
-    def get_configuration(self, resource: dict) -> dict:
-        """Collect detailed configuration settings for a given resource."""
-        print(f"[OCI] Collecting configuration for {resource['type']}: {resource['name']}...")
-        rtype = resource.get("type", "")
-        cid = resource.get("compartment_id", self._compartment_id)
-
-        dispatch = {
-            "Compute": lambda: self._get_compute_config(resource, cid),
-            "VCN": lambda: self._get_vcn_config(resource),
-            "Subnet": lambda: self._get_subnet_config(resource),
-            "SecurityList": lambda: self._get_security_list_config(resource),
-            "ObjectStorage": lambda: self._get_bucket_config(resource),
-            "IAM_Users": lambda: self._get_iam_user_config(resource),
-            "IAM_Policies": lambda: self._get_iam_policy_config(resource)
-        }
-
-        handler = dispatch.get(rtype)
-        if handler:
-            return handler()
-
-        return {
-            "id": resource.get("id"),
-            "name": resource.get("name"),
-            "type": rtype
-        }
 
     def _get_compute_config(self, resource, cid):
         """Retrieve detailed configuration for a Compute instance."""
