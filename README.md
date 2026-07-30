@@ -104,39 +104,58 @@ This design simplifies adding new cloud providers, services, and security rules 
 
 ---
 
-## Supabase Database & Edge Functions Backend
+## Local Backend & Database Setup (Docker)
 
-This project integrates with **Supabase** to manage user authentication, store cloud connections, maintain a scan job queue, and hold scan results/findings.
+This project runs a localized backend stack orchestrating user authentication, database management, migrations, and a REST API via **Docker Compose**.
 
 ### 🗄️ Database Tables (PostgreSQL)
-The database is structured into 5 core normalized tables with **Row-Level Security (RLS)** active:
+The database contains 5 core normalized tables under the `public` schema with **Row-Level Security (RLS)** active:
 1. **`connections`**: Holds cloud access credentials per user.
 2. **`scan_jobs`**: Serves as our task queue (tracks `PENDING`, `RUNNING`, `COMPLETED`, `FAILED` jobs).
 3. **`resources`**: Inventory database holding raw configurations inside `JSONB` columns.
 4. **`rules`**: Static check reference catalog (e.g., `SEC-001`, `IAM-001`).
 5. **`findings`**: Contains security alerts linking resources to rule statuses (`PASS`/`FAIL`).
 
-### ⚙️ Supabase CLI Commands
-We use the Supabase CLI for database schema migrations and serverless Edge Functions.
+---
 
-#### 1. Enable script execution (Windows PowerShell)
-If PowerShell blocks Node/NPM scripts, run this developer override:
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+### 🚀 Running the Local Stack
+The entire environment can be initialized and launched automatically. 
+
+#### 1. Setup Environment Variables
+First, copy the example environment configuration to `.env` and adjust the values as needed:
+
+```bash
+# Copy the example environment file
+cp example.env .env
+```
+*(On Windows PowerShell: `Copy-Item example.env .env`)*
+
+#### 2. Start the Container Stack
+Build and launch the complete container architecture in the background:
+
+```bash
+docker compose up --build -d
 ```
 
-#### 2. Link local workspace to cloud project
-```powershell
-npx supabase link --project-ref <your-project-reference-id>
-```
 
-#### 3. Push schema migrations to remote database
-```powershell
-npx supabase db push
-```
+### 🔧 Initialization Pipeline
 
-#### 4. Deploy serverless Edge Functions
-Deploy code directly to the cloud without needing a local Docker daemon:
-```powershell
-npx supabase functions deploy <function-name> --project-ref <your-project-ref> --use-api
-```
+When you boot the container orchestration stack, the environment sets itself up through the following phases:
+
+1. **Init Docker Compose**
+   * Configures shared networking (`db_network`) and maps dependencies so that services start in their correct dependency order.
+2. **Init Postgres (`db` service)**
+   * Starts a `postgres:16.4-alpine` container.
+   * Loads [00_init_auth.sql](file:///c:/Users/403/Documents/CloudRiskAnalyzer/db/00_init_auth.sql) in `/docker-entrypoint-initdb.d/` to create the `auth` schema, register default security roles (`authenticated`, `anon`), and set up the `auth.uid()` helper function.
+3. **Init Auth (`auth` service)**
+   * Launches `supabase/gotrue:v2.146.0` (Supabase's standalone auth engine) on port `9999`.
+4. **Migrate Supabase**
+   * During boot, the GoTrue auth service automatically connects to the Postgres database using `search_path=auth` and performs migration schemas to seed its internal user and session tables.
+5. **Migrate Database**
+   * Before booting the Express.js application, the `api` container runs `psql` to execute the database migrations.
+   * It executes the migration script [01_init_db.sql](file:///c:/Users/403/Documents/CloudRiskAnalyzer/db/01_init_db.sql) against the database to construct the core application tables, performance indices, and enforce Row-Level Security policies.
+6. **Init ExpressJS Backend (`api` service)**
+   * Builds the backend microservice inside [api/](file:///c:/Users/403/Documents/CloudRiskAnalyzer/api) with `postgresql-client` installed.
+   * Runs `npx prisma generate` to inspect both `public` and `auth` schemas to create database client models.
+   * Boots the backend REST API on port `3000` once the migration step completes successfully.
+
