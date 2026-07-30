@@ -30,9 +30,9 @@ RULES = [
         "check": lambda config: any(
             r.get("source") == "0.0.0.0/0" and
             r.get("protocol") == "6" and
-            r.get("tcp_options") is not None and
-            r["tcp_options"].get("destination_port_range") is not None and
-            r["tcp_options"]["destination_port_range"].get("min", 0) <= 22 <= r["tcp_options"]["destination_port_range"].get("max", 0)
+            (tcp := r.get("tcp_options")) and
+            (ports := tcp.get("destination_port_range")) and
+            ports.get("min", 0) <= 22 <= ports.get("max", 0)
             for r in config.get("raw_data", {}).get("ingress_security_rules", [])
         ),
     },
@@ -46,9 +46,9 @@ RULES = [
         "check": lambda config: any(
             r.get("source") == "0.0.0.0/0" and
             r.get("protocol") == "6" and
-            r.get("tcp_options") is not None and
-            r["tcp_options"].get("destination_port_range") is not None and
-            r["tcp_options"]["destination_port_range"].get("min", 0) <= 3389 <= r["tcp_options"]["destination_port_range"].get("max", 0)
+            (tcp := r.get("tcp_options")) and
+            (ports := tcp.get("destination_port_range")) and
+            ports.get("min", 0) <= 3389 <= ports.get("max", 0)
             for r in config.get("raw_data", {}).get("ingress_security_rules", [])
         ),
     },
