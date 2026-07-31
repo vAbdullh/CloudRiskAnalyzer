@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon -L src/index.js",
+    "dev": "node src/seed.js && nodemon -L src/index.js",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
