@@ -4,6 +4,10 @@ from abc import ABC, abstractmethod
 class BaseProvider(ABC):
     name = "BaseProvider"
 
+    def __init__(self) -> None:
+        self._config = None
+        self.account_id = None
+
     @abstractmethod
     def required_credentials(self) -> list[dict]:
         """Return a list of credential fields needed by this provider.

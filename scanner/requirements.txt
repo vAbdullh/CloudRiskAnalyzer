@@ -1,4 +1,8 @@
-oci
+# AWS
 boto3
+botocore
+# OCI (Oracle Cloud Infrastructure)
+oci
+# GCP (Google Cloud Platform)
 google-cloud-compute
 google-cloud-storage

@@ -6,6 +6,7 @@ class GCPProvider(BaseProvider):
     name = "GCP"
 
     def __init__(self):
+        super().__init__()
         self.credentials = None
 
     def required_credentials(self) -> list[dict]:
