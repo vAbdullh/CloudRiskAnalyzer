@@ -97,6 +97,7 @@ class OrcProvider(BaseProvider):
         self._compartment_id = None
         self._namespace = None
         print("[OCI] Disconnected.")
+        #commit
 
     def list_supported_resources(self) -> list[str]:
         """Return a list of resource types supported by this scanner provider."""
