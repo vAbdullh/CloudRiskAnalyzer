@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY web-api/package*.json ./
+COPY web-api/prisma ./prisma/
+
+RUN npm install
+
+COPY web-api/ .
+# Copy shared ccc mapping files
+COPY ccc_integration /ccc_integration
+
+RUN npx prisma generate
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

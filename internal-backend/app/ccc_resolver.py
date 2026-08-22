@@ -5,8 +5,19 @@ from functools import lru_cache
 # Adjust base dir to project root assuming this file is in internal-backend/app/
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-MAPPING_FILE = os.path.join(BASE_DIR, "ccc_integration", "finding_to_ccc_mapping.json")
-CONTROLS_FILE = os.path.join(BASE_DIR, "ccc_integration", "ccc_controls.json")
+def get_path(filename):
+    paths = [
+        os.path.join(BASE_DIR, "ccc_integration", filename),
+        f"/ccc_integration/{filename}",
+        os.path.join(os.path.dirname(__file__), "..", "ccc_integration", filename)
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return filename
+
+MAPPING_FILE = get_path("finding_to_ccc_mapping.json")
+CONTROLS_FILE = get_path("ccc_controls.json")
 
 class CCCResolver:
     def __init__(self):
