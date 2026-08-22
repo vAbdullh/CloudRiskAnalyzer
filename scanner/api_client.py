@@ -16,6 +16,21 @@ class InternalBackendClient:
             "Content-Type": "application/json"
         }
 
+    def poll_job(self) -> dict | None:
+        """Poll the database for the next pending job."""
+        url = f"{self.base_url}/internal/jobs/poll"
+        try:
+            res = requests.get(url, headers=self.headers, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            # The backend returns {"job": None} or {"job_id": "...", "provider": "...", ...}
+            if data.get("job") is None and "job_id" not in data:
+                return None
+            return data
+        except Exception as e:
+            logging.error(f"Failed to poll database for pending jobs: {e}")
+            return None
+
     def get_job(self, job_id: str) -> dict | None:
         """Fetch job details (provider type and credentials) for a specific job ID."""
         url = f"{self.base_url}/internal/jobs/{job_id}"

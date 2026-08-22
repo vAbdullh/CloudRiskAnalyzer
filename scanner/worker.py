@@ -63,21 +63,30 @@ def main():
     while not shutdown_requested:
         try:
             # Block (sleep) until a job ID is pushed to "scan_queue"
-            logging.info("Waiting for jobs in Redis queue...")
-            queue_item = r.blpop("scan_queue", timeout=5)
-            
-            if not queue_item:
-                # Timeout reached, loop again (checking for shutdown_requested)
-                continue
+            queue_item = None
+            try:
+                queue_item = r.blpop("scan_queue", timeout=5)
+            except (redis.exceptions.TimeoutError, TimeoutError, redis.exceptions.ConnectionError) as e:
+                logging.debug(f"Redis polling error/timeout: {e}")
 
-            _, job_id_bytes = queue_item
-            job_id = job_id_bytes.decode("utf-8")
-            logging.info(f"Picked up Job ID: {job_id} from Redis queue")
+            job_id = None
+            job = None
 
-            # 1. Fetch job configurations and decrypted credentials
-            job = client.get_job(job_id)
-            if not job:
-                logging.error(f"Could not retrieve details for job {job_id}. Skipping.")
+            if queue_item:
+                _, job_id_bytes = queue_item
+                job_id = job_id_bytes.decode("utf-8")
+                logging.info(f"Picked up Job ID: {job_id} from Redis queue")
+                # 1. Fetch job configurations and decrypted credentials
+                job = client.get_job(job_id)
+            else:
+                # Fallback to database polling
+                job = client.poll_job()
+                if job:
+                    job_id = job.get("job_id")
+                    logging.info(f"Picked up Job ID: {job_id} from Database fallback")
+
+            if not job or not job_id:
+                # Nothing found in Redis or DB
                 continue
 
             # 2. Update status to RUNNING

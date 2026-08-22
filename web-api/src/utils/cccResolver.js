@@ -13,14 +13,27 @@ const loadData = () => {
   if (mappingCache && controlsCache) return;
 
   try {
-    const mappingFile = fs.readFileSync('/ccc_integration/finding_to_ccc_mapping.json', 'utf8');
+    const getPath = (filename) => {
+      const paths = [
+        path.join(process.cwd(), 'ccc_integration', filename),
+        path.join(process.cwd(), '..', 'ccc_integration', filename),
+        `/ccc_integration/${filename}`
+      ];
+      return paths.find(p => fs.existsSync(p));
+    };
+
+    const mappingPath = getPath('finding_to_ccc_mapping.json');
+    if (!mappingPath) throw new Error('Could not find finding_to_ccc_mapping.json');
+    const mappingFile = fs.readFileSync(mappingPath, 'utf8');
     const mappingData = JSON.parse(mappingFile);
     mappingCache = {};
     for (const item of mappingData.findings || []) {
       mappingCache[item.finding_type] = item;
     }
 
-    const controlsFile = fs.readFileSync('/ccc_integration/ccc_controls.json', 'utf8');
+    const controlsPath = getPath('ccc_controls.json');
+    if (!controlsPath) throw new Error('Could not find ccc_controls.json');
+    const controlsFile = fs.readFileSync(controlsPath, 'utf8');
     const controlsData = JSON.parse(controlsFile);
     controlsCache = {};
     for (const domain of controlsData.domains || []) {

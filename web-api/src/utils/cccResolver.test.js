@@ -7,10 +7,12 @@ vi.mock('fs');
 describe('cccResolver', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    fs.existsSync.mockReturnValue(true);
     resetCacheForTesting();
   });
 
   it('returns empty array if finding type is not found', () => {
+    fs.existsSync.mockReturnValue(true);
     fs.readFileSync.mockImplementation((path) => {
       if (path.includes('mapping.json')) return JSON.stringify({ findings: [] });
       if (path.includes('controls.json')) return JSON.stringify({ domains: [] });

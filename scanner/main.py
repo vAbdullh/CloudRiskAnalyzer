@@ -83,44 +83,41 @@ def main():
     print(f"\nScanning started. Redirecting all output to {filename}...")
 
     with open(filename, "w", encoding="utf-8") as f:
-        # Redirect stdout to the dynamic log file
-        original_stdout = sys.stdout
-        sys.stdout = f
-
         try:
-            print("--- Step 1: Discovering Resources ---")
-            resources = provider.discover_resources()
-            print(f"\n[Scanner] Discovered {len(resources)} resources:")
-            for resource in resources:
-                print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
+            def log_and_print(msg):
+                print(msg)
+                f.write(msg + "\n")
 
-            print("\n--- Step 2 & 3: Scanning Resources ---")
+            log_and_print("--- Step 1: Discovering Resources ---")
+            resources = provider.discover_resources()
+            log_and_print(f"\n[Scanner] Discovered {len(resources)} resources:")
+            for resource in resources:
+                log_and_print(f" - Type: {resource['type']} | ID: {resource['id']} | Name: {resource['name']}")
+
+            log_and_print("\n--- Step 2 & 3: Scanning Resources ---")
             for idx, resource in enumerate(resources, 1):
-                # Print progress to both the log file and the interactive console
                 progress_msg = f"[{idx}/{len(resources)}] Scanning resource: [{resource['type']}] {resource['name']} ({resource['id']})..."
-                print(f"\n{progress_msg}")
-                print(progress_msg, file=sys.__stdout__, flush=True)
+                log_and_print(f"\n{progress_msg}")
 
                 # Step 2: Collect configuration
                 configuration = provider.get_configuration(resource)
-                print("Configuration collected:")
-                pprint.pprint(configuration, indent=2)
+                log_and_print("Configuration collected:")
+                log_and_print(pprint.pformat(configuration, indent=2))
 
                 # Step 3: Evaluate security rules
                 resource_evaluations = evaluate_rules(resource, configuration, rules)
-                print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
+                log_and_print(f"Rule Evaluations (Checks: {len(resource_evaluations)}):")
                 for rule_idx, eval_res in enumerate(resource_evaluations, 1):
                     status_str = f"[{eval_res['status']}]"
-                    print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
-                    print(f"    Description:    {eval_res['description']}")
+                    log_and_print(f"  - {status_str} Rule: {eval_res['rule_name']} ({eval_res['rule_id']})")
+                    log_and_print(f"    Description:    {eval_res['description']}")
                     if eval_res['status'] != "SAFE":
-                        print(f"    Recommendation: {eval_res['recommendation']}")
+                        log_and_print(f"    Recommendation: {eval_res['recommendation']}")
 
             provider.disconnect()
 
-        finally:
-            # Restore original stdout
-            sys.stdout = original_stdout
+        except Exception as e:
+            log_and_print(f"Fatal error during scan: {e}")
 
     print(f"Scan completed successfully. Results saved in {filename}.")
 

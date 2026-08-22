@@ -1,0 +1,33 @@
+ARG PYTHON_VERSION=3.13.5
+FROM python:${PYTHON_VERSION}-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    appuser
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=bind,source=internal-backend/requirements.txt,target=requirements.txt \
+    python -m pip install -r requirements.txt
+
+USER appuser
+
+COPY internal-backend/app ./app
+COPY ccc_integration /ccc_integration
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/internal/health')"
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

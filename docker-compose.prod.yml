@@ -1,0 +1,171 @@
+services:
+  db:
+    image: postgres:16.4-alpine
+    container_name: postgres_prod
+    hostname: postgres16
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # Do not expose ports to host in production
+    restart: unless-stopped
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    networks:
+      - db_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+  
+  # Removed pgadmin for production security
+
+  auth:
+    image: supabase/gotrue:v2.146.0
+    container_name: gotrue_prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Auth is exposed via its own domain or a reverse proxy. 
+    # For a simple single-domain prod, you might route /auth through Nginx.
+    # Here we expose it if an external load balancer routes to it.
+    ports:
+      - "${GOTRUE_PORT}:9999"
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?search_path=auth
+      GOTRUE_SITE_URL: ${PROD_SITE_URL} # Must be set in .env (e.g., https://sahaba.example.com)
+      GOTRUE_JWT_SECRET: ${GOTRUE_JWT_SECRET}
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      # SMTP Settings should be added in .env for production email delivery
+      API_EXTERNAL_URL: ${PROD_AUTH_URL} # Must be set in .env
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      timeout: 5s
+      interval: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - db_network
+
+  web-api:
+    build:
+      context: .
+      dockerfile: web-api/Dockerfile.prod
+    container_name: web_api_prod
+    restart: unless-stopped
+    # Do not expose ports directly, Nginx handles it
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      JWT_SECRET: ${GOTRUE_JWT_SECRET}
+      PORT: 3000
+      EXPRESS_GOTRUE_URL: http://auth:9999
+      WORKER_API_KEY: ${WORKER_API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    # No volume mounts for source code in prod
+    command: npm run start
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    networks:
+      - db_network
+      - private_network
+      - web_network
+
+  internal-backend:
+    build: 
+      context: .
+      dockerfile: internal-backend/Dockerfile.prod
+    container_name: internal_backend_prod
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_API_KEY: ${WORKER_API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    # No volume mounts for source code in prod
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/internal/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - private_network
+      - db_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_prod
+    restart: unless-stopped
+    command: redis-server --save 60 1 --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - private_network
+
+  scanner:
+    build: 
+      context: .
+      dockerfile: scanner/Dockerfile.prod
+    container_name: scanner_prod
+    restart: unless-stopped
+    environment:
+      WORKER_API_KEY: ${WORKER_API_KEY}
+      INTERNAL_BACKEND_URL: http://internal-backend:8000
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # No volume mounts for source code in prod
+    command: python worker.py
+    depends_on:
+      redis:
+        condition: service_started
+      internal-backend:
+        condition: service_healthy
+    networks:
+      - private_network
+      - web_network
+  
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.prod
+    container_name: frontend_prod
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+    depends_on:
+      - web-api
+    networks:
+      - web_network
+
+networks:
+  db_network:
+  private_network:
+    internal: true
+  web_network:
+
+volumes:
+  pg_data:
+  redis_data:
